@@ -1,0 +1,35 @@
+pipeline {
+    agent any
+
+    tools {
+        // Install the Maven version configured as "M3" and add it to the path.
+        maven "maven3"
+    }
+
+    stages {
+        stage('clone') {
+            steps {
+                // Get some code from a GitHub repository
+             git credentialsId: 'helloworld_java', url: 'https://github.com/harig1511/spring3-mvc.git'
+			}
+            }
+		stage('Build') {
+            steps {
+                // Run Maven on a Unix agent.
+                sh "mvn clean package"
+			}
+            }
+        stage('deploy'){
+            steps{
+                withCredentials([usernameColonPassword(credentialsId: 'tomcat_credentials', variable: 'tomcat_credentials')]) {
+                    sh "curl -v -u $tomcat_credentials -T /var/lib/jenkins/workspace/spring3-mvc-madhu/target/spring3-mvc-maven-xml-hello-world-1.2.war 'http://13.235.113.235:8080/manager/text/deploy?path=/spring3-madhu'"
+                }
+            }
+            }
+	}
+	post {
+                success {
+                                       archiveArtifacts 'target/*.war'
+                }
+}
+}
