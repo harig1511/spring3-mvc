@@ -1,0 +1,89 @@
+pipeline {
+    agent any
+    
+    tools {
+        // Install the Maven version configured as "M3" and add it to the path.
+        maven "maven3"
+    }
+     environment {
+        // This can be nexus3 or nexus2
+        NEXUS_VERSION = "nexus3"
+        // This can be http or https
+        NEXUS_PROTOCOL = "http"
+        // Where your Nexus is running
+        NEXUS_URL = "35.154.226.191:8081"
+        // Repository where we will upload the artifact
+        NEXUS_REPOSITORY = "spring3-mvc-madhu"
+        // Jenkins credential id to authenticate to Nexus OSS
+        NEXUS_CREDENTIAL_ID = "nexus credentials"
+    }
+
+    stages {
+        stage('clone') {
+            steps {
+                // Get some code from a GitHub repository
+             git credentialsId: 'helloworld_java', url: 'https://github.com/harig1511/spring3-mvc.git'
+			}
+            }
+		stage('Build') {
+            steps {
+                // Run Maven on a Unix agent.
+                sh "mvn package"
+			}
+            }
+        stage('deploy'){
+            steps{
+                withCredentials([usernameColonPassword(credentialsId: 'tomcat_credentials', variable: 'tomcat_credentials')]) {
+                    sh "curl -v -u $tomcat_credentials -T /var/lib/jenkins/workspace/spring3-mvc-madhu/target/spring3-mvc-maven-xml-hello-world-1.2.war 'http://13.233.141.241:8080/manager/text/deploy?path=/spring3-madhu&update=true'"
+                }
+            }
+            }
+        stage("publish to nexus") {
+            steps {
+                script {
+                    // Read POM xml file using 'readMavenPom' step , this step 'readMavenPom' is included in: https://plugins.jenkins.io/pipeline-utility-steps
+                    pom = readMavenPom file: "pom.xml";
+                    // Find built artifact under target folder
+                    filesByGlob = findFiles(glob: "target/*.${pom.packaging}");
+                    // Print some info from the artifact found
+                    echo "${filesByGlob[0].name} ${filesByGlob[0].path} ${filesByGlob[0].directory} ${filesByGlob[0].length} ${filesByGlob[0].lastModified}"
+                    // Extract the path from the File found
+                    artifactPath = filesByGlob[0].path;
+                    // Assign to a boolean response verifying If the artifact name exists
+                    artifactExists = fileExists artifactPath;
+                    if(artifactExists) {
+                        echo "*** File: ${artifactPath}, group: ${pom.groupId}, packaging: ${pom.packaging}, version ${pom.version}";
+                        nexusArtifactUploader(
+                            nexusVersion: NEXUS_VERSION,
+                            protocol: NEXUS_PROTOCOL,
+                            nexusUrl: NEXUS_URL,
+                            groupId: pom.groupId,
+                            version: '${BUILD_NUMBER}',
+                            repository: NEXUS_REPOSITORY,
+                            credentialsId: NEXUS_CREDENTIAL_ID,
+                            artifacts: [
+                                // Artifact generated such as .jar, .ear and .war files.
+                                [artifactId: pom.artifactId,
+                                classifier: '',
+                                file: artifactPath,
+                                type: pom.packaging],
+                                // Lets upload the pom.xml file for additional information for Transitive dependencies
+                                [artifactId: pom.artifactId,
+                                classifier: '',
+                                file: "pom.xml",
+                                type: "pom"]
+                            ]
+                        );
+                        }else {
+                            error "*** File: ${artifactPath}, could not be found";
+                    }
+                }
+            }
+        }
+	}
+	post {
+                success {
+                                       archiveArtifacts 'target/*.war'
+                }
+}
+}
